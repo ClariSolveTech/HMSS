@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { motion, useInView, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import {
   Activity, Stethoscope, Pill, PhoneCall, FileText, LineChart, Users, Bell,
@@ -96,7 +97,7 @@ function Navbar() {
           ))}
         </div>
         <div className="hidden items-center gap-2 md:flex">
-          <a href="#login" className="rounded-full px-4 py-2 text-sm font-medium text-foreground/80 hover:text-foreground">Login</a>
+          <Link to="/login" className="rounded-full px-4 py-2 text-sm font-medium text-foreground/80 hover:text-foreground">Login</Link>
           <a href="#demo" className="group inline-flex items-center gap-1.5 rounded-full bg-primary-gradient px-4 py-2 text-sm font-semibold text-white shadow-elevated transition hover:shadow-glow">
             Book Demo <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
           </a>

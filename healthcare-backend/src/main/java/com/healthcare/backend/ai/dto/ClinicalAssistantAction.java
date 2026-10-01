@@ -1,0 +1,10 @@
+package com.healthcare.backend.ai.dto;
+
+public enum ClinicalAssistantAction {
+    SUMMARIZE_PATIENT,
+    SUMMARIZE_CONSULTATION,
+    ANALYZE_LAB_RESULTS,
+    SUGGEST_CLINICAL_CONSIDERATIONS,
+    DRAFT_CLINICAL_NOTE,
+    EXPLAIN_PATIENT_HISTORY
+}

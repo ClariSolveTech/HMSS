@@ -1,0 +1,21 @@
+test24_doctorSeesOnlyOwnQueue
+Status expected:<200> but was:<500>
+---
+test25_receptionistSeesHospitalQueue
+Status expected:<200> but was:<500>
+---
+test5_hospitalIsolation_queueListing
+Status expected:<200> but was:<500>
+---
+test30_hospitalIdCannotBeOverridden
+Status expected:<200> but was:<500>
+---
+test29_paginationAndFiltering
+Status expected:<200> but was:<500>
+---
+test11_fifoOrdering
+Status expected:<200> but was:<500>
+---
+test31_concurrentTokenGeneration_uniqueness
+expected: <4> but was: <2>
+---
