@@ -21,7 +21,14 @@ import { QueuePanel } from "@/components/dashboard/queue-panel";
 import { PatientSearch } from "@/components/dashboard/patient-search";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getAuthUser, isAuthenticated } from "@/lib/auth";
+import {
+  getAuthUser,
+  isAuthenticated,
+  isDoctor,
+  isOnlyReceptionist,
+  isPatient,
+  isStaff,
+} from "@/lib/auth";
 import { queueApi, type QueueEntryResponse } from "@/services/queue-api";
 
 export const Route = createFileRoute("/")({
@@ -52,6 +59,14 @@ function Dashboard() {
   useEffect(() => {
     if (!isAuthenticated()) {
       navigate({ to: "/login" });
+      return;
+    }
+    if (isPatient() && !isStaff()) {
+      navigate({ to: "/patient/dashboard" });
+      return;
+    }
+    if (isOnlyReceptionist()) {
+      navigate({ to: "/receptionist" });
     }
   }, [navigate]);
 
@@ -59,6 +74,7 @@ function Dashboard() {
   const { data: queueData } = useQuery({
     queryKey: ["doctor-queue"],
     queryFn: () => queueApi.getDoctorOwnQueue(),
+    enabled: isDoctor(),
     refetchInterval: 15000,
   });
 
@@ -66,6 +82,7 @@ function Dashboard() {
   const { data: currentTokenData, isLoading: currentTokenLoading } = useQuery({
     queryKey: ["doctor-current-token"],
     queryFn: () => queueApi.getDoctorOwnCurrentConsultation(),
+    enabled: isDoctor(),
     refetchInterval: 10000,
   });
 
@@ -76,7 +93,9 @@ function Dashboard() {
   const totalAppointments = queueData?.totalElements || entries.length;
 
   const nextPatient = waitingEntries[0];
-  const doctorName = user?.email ? user.email.split("@")[0]?.replace(".", " ") ?? "Doctor" : "Doctor";
+  const doctorName = user?.email
+    ? (user.email.split("@")[0]?.replace(".", " ") ?? "Doctor")
+    : "Doctor";
 
   return (
     <AppShell>
@@ -165,7 +184,8 @@ function Dashboard() {
                     <div>
                       <p className="num text-3xl font-bold">#{currentTokenData.tokenNumber}</p>
                       <p className="mt-1 text-xs opacity-90">
-                        {currentTokenData.patientName || `Patient ${currentTokenData.patientCode}`} · {currentTokenData.status.toLowerCase().replace("_", " ")}
+                        {currentTokenData.patientName || `Patient ${currentTokenData.patientCode}`}{" "}
+                        · {currentTokenData.status.toLowerCase().replace("_", " ")}
                       </p>
                     </div>
                   ) : (
@@ -221,7 +241,10 @@ function Dashboard() {
                       <Users className="size-3" /> Queue load
                     </p>
                     <p className="num mt-1 text-xl font-bold">
-                      {totalAppointments > 0 ? Math.round((waitingEntries.length / totalAppointments) * 100) : 0}%
+                      {totalAppointments > 0
+                        ? Math.round((waitingEntries.length / totalAppointments) * 100)
+                        : 0}
+                      %
                     </p>
                   </div>
                 </div>

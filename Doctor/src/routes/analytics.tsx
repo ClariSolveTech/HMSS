@@ -1,5 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
+import { toast } from "sonner";
+import { isAuthenticated, isDoctor } from "@/lib/auth";
 import {
   Area,
   AreaChart,
@@ -144,6 +146,20 @@ function OutcomeLegend({ data }: { data: ConsultationOutcomeSummary[] }) {
 /* ─── Main component ────────────────────────────────────────────────────────── */
 
 function Analytics() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      navigate({ to: "/login" });
+      return;
+    }
+    if (!isDoctor()) {
+      toast.error("Unauthorized: Doctor Analytics is restricted");
+      navigate({ to: "/receptionist" });
+      return;
+    }
+  }, [navigate]);
+
   const [selectedRange, setSelectedRange] = useState(1); // default 14 days
 
   const toDate = toISODate(new Date());

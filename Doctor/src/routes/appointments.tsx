@@ -53,7 +53,8 @@ const statusBadgeStyles: Record<AppointmentStatus, string> = {
   BOOKED: "bg-info/12 text-info border-info/20",
   CONFIRMED: "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
   CHECKED_IN: "bg-primary/15 text-primary border-primary/30 font-semibold",
-  IN_PROGRESS: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 font-semibold",
+  IN_PROGRESS:
+    "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 font-semibold",
   COMPLETED: "bg-success/15 text-success border-success/30",
   CANCELLED: "bg-destructive/15 text-destructive border-destructive/30",
   NO_SHOW: "bg-muted text-muted-foreground border-border",
@@ -79,7 +80,9 @@ function Appointments() {
   const [actionId, setActionId] = useState<number | null>(null);
 
   const appointments: AppointmentResponse[] = data?.content || [];
-  const hasActiveFilters = Boolean(searchQuery || selectedDate || selectedStatus !== "ALL" || selectedType !== "ALL");
+  const hasActiveFilters = Boolean(
+    searchQuery || selectedDate || selectedStatus !== "ALL" || selectedType !== "ALL",
+  );
 
   const handleClearFilters = () => {
     setSearchQuery("");
@@ -115,7 +118,7 @@ function Appointments() {
     setActionId(id);
     cancelMutation.mutate(
       { id, reason: "Cancelled by doctor" },
-      { onSettled: () => setActionId(null) }
+      { onSettled: () => setActionId(null) },
     );
   };
 
@@ -201,6 +204,7 @@ function Appointments() {
                 <option value="FOLLOW_UP">Follow Up</option>
                 <option value="EMERGENCY">Emergency</option>
                 <option value="WALK_IN">Walk In</option>
+                <option value="TELECONSULTATION">Teleconsultation</option>
               </select>
             </div>
           </div>
@@ -239,7 +243,8 @@ function Appointments() {
             <AlertCircle className="size-10 text-destructive mb-2" />
             <h3 className="text-base font-bold">Failed to load appointments</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              {(error as any)?.message || "Network error while connecting to backend server."}
+              {(error instanceof Error ? error.message : null) ||
+                "Network error while connecting to backend server."}
             </p>
             <Button size="sm" className="mt-4 rounded-xl" onClick={() => refetch()}>
               Try Again
@@ -258,7 +263,12 @@ function Appointments() {
                 : "No appointments scheduled for the selected view."}
             </p>
             {hasActiveFilters && (
-              <Button size="sm" variant="outline" className="mt-4 rounded-xl" onClick={handleClearFilters}>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-4 rounded-xl"
+                onClick={handleClearFilters}
+              >
                 Clear Filters
               </Button>
             )}
@@ -273,7 +283,10 @@ function Appointments() {
               const formattedTime = `${apt.startTime?.substring(0, 5) || "09:00"} - ${apt.endTime?.substring(0, 5) || "09:15"}`;
 
               return (
-                <div key={apt.id} className="surface-card rounded-2xl p-4 flex flex-col justify-between space-y-4">
+                <div
+                  key={apt.id}
+                  className="surface-card rounded-2xl p-4 flex flex-col justify-between space-y-4"
+                >
                   <div>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
@@ -282,7 +295,12 @@ function Appointments() {
                           #{apt.appointmentNumber} · Patient ID: {apt.patientId}
                         </p>
                       </div>
-                      <Badge className={cn("shrink-0 rounded-full border text-[10px]", statusBadgeStyles[apt.status])}>
+                      <Badge
+                        className={cn(
+                          "shrink-0 rounded-full border text-[10px]",
+                          statusBadgeStyles[apt.status],
+                        )}
+                      >
                         {apt.status.replace("_", " ")}
                       </Badge>
                     </div>
@@ -315,7 +333,11 @@ function Appointments() {
                         onClick={() => handleConfirm(apt.id)}
                         disabled={isWorking}
                       >
-                        {isWorking ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5 text-amber-600" />}
+                        {isWorking ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="size-3.5 text-amber-600" />
+                        )}
                         Confirm
                       </Button>
                     )}
@@ -328,12 +350,18 @@ function Appointments() {
                         onClick={() => handleCheckIn(apt.id)}
                         disabled={isWorking}
                       >
-                        {isWorking ? <Loader2 className="size-3.5 animate-spin" /> : <UserCheck className="size-3.5" />}
+                        {isWorking ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <UserCheck className="size-3.5" />
+                        )}
                         Check-in
                       </Button>
                     )}
 
-                    {(apt.status === "BOOKED" || apt.status === "CONFIRMED" || apt.status === "CHECKED_IN") && (
+                    {(apt.status === "BOOKED" ||
+                      apt.status === "CONFIRMED" ||
+                      apt.status === "CHECKED_IN") && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -341,7 +369,11 @@ function Appointments() {
                         onClick={() => handleNoShow(apt.id)}
                         disabled={isWorking}
                       >
-                        {isWorking ? <Loader2 className="size-3.5 animate-spin" /> : <UserX className="size-3.5" />}
+                        {isWorking ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <UserX className="size-3.5" />
+                        )}
                         No-Show
                       </Button>
                     )}
@@ -379,5 +411,3 @@ function Appointments() {
     </AppShell>
   );
 }
-
-

@@ -99,10 +99,22 @@ public class QueueIntegrationTest {
     private com.healthcare.backend.prescription.repository.PrescriptionRepository prescriptionRepository;
 
     @Autowired
+    private com.healthcare.backend.lab.repository.LabResultRepository labResultRepository;
+
+    @Autowired
     private com.healthcare.backend.lab.repository.LabOrderRepository labOrderRepository;
 
     @Autowired
     private com.healthcare.backend.billing.repository.InvoiceRepository invoiceRepository;
+
+    @Autowired
+    private com.healthcare.backend.billing.repository.InvoiceItemRepository invoiceItemRepository;
+
+    @Autowired
+    private com.healthcare.backend.billing.repository.PaymentRepository paymentRepository;
+
+    @Autowired
+    private com.healthcare.backend.notification.repository.NotificationRepository notificationRepository;
 
     @Autowired
     private com.healthcare.backend.consultation.repository.ConsultationRepository consultationRepository;
@@ -143,8 +155,12 @@ public class QueueIntegrationTest {
                 .apply(SecurityMockMvcConfigurers.springSecurity())
                 .build();
 
+        notificationRepository.deleteAll();
         prescriptionRepository.deleteAll();
+        labResultRepository.deleteAll();
         labOrderRepository.deleteAll();
+        paymentRepository.deleteAll();
+        invoiceItemRepository.deleteAll();
         invoiceRepository.deleteAll();
         consultationRepository.deleteAll();
         queueEntryRepository.deleteAll();

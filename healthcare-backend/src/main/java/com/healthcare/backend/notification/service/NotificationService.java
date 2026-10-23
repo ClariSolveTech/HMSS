@@ -10,6 +10,7 @@ import com.healthcare.backend.notification.dto.NotificationResponse;
 import com.healthcare.backend.notification.entity.Notification;
 import com.healthcare.backend.notification.entity.NotificationPriority;
 import com.healthcare.backend.notification.entity.NotificationStatus;
+import com.healthcare.backend.notification.entity.NotificationType;
 import com.healthcare.backend.notification.repository.NotificationRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -97,6 +98,15 @@ public class NotificationService {
         Long currentHospitalId = SecurityUtils.getCurrentHospitalId();
 
         return notificationRepository.countByRecipientIdAndHospitalIdAndStatus(currentUserId, currentHospitalId, NotificationStatus.UNREAD);
+    }
+
+    public boolean existsDuplicate(Long hospitalId, Long recipientUserId, NotificationType type, String referenceType, Long referenceId) {
+        if (hospitalId == null || recipientUserId == null || type == null || referenceType == null || referenceId == null) {
+            return false;
+        }
+        return notificationRepository.existsByHospitalIdAndRecipientIdAndTypeAndReferenceTypeAndReferenceId(
+                hospitalId, recipientUserId, type, referenceType, referenceId
+        );
     }
 
     public NotificationResponse getNotification(Long id) {

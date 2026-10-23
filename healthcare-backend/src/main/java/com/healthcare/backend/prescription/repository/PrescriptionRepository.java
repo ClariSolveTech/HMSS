@@ -22,4 +22,6 @@ public interface PrescriptionRepository extends JpaRepository<Prescription, Long
     boolean existsByConsultationIdAndHospitalId(Long consultationId, Long hospitalId);
 
     long countByHospitalId(Long hospitalId);
+
+    long countByPatientIdAndHospitalId(Long patientId, Long hospitalId);
 }

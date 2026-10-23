@@ -43,6 +43,13 @@ public class AppointmentController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/appointments/{id}/teleconsult")
+    @PreAuthorize("hasAnyRole('HOSPITAL_ADMIN', 'DOCTOR')")
+    public ResponseEntity<AppointmentResponse> startOrProvisionTeleconsultation(@PathVariable Long id) {
+        AppointmentResponse response = appointmentService.startOrProvisionTeleconsultation(id);
+        return ResponseEntity.ok(response);
+    }
+
     @GetMapping("/appointments")
     @PreAuthorize("hasAnyRole('HOSPITAL_ADMIN', 'RECEPTIONIST', 'DOCTOR')")
     public ResponseEntity<Page<AppointmentResponse>> getAppointments(
@@ -77,7 +84,7 @@ public class AppointmentController {
     }
 
     @GetMapping("/doctors/{doctorId}/appointments")
-    @PreAuthorize("hasAnyRole('HOSPITAL_ADMIN', 'DOCTOR')")
+    @PreAuthorize("hasAnyRole('HOSPITAL_ADMIN', 'DOCTOR', 'RECEPTIONIST')")
     public ResponseEntity<Page<AppointmentResponse>> getDoctorAppointments(
             @PathVariable Long doctorId,
             @RequestParam(required = false) LocalDate date,

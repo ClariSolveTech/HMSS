@@ -17,12 +17,18 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.healthcare.backend.appointment.entity.Appointment;
+import com.healthcare.backend.appointment.entity.AppointmentStatus;
+import com.healthcare.backend.appointment.repository.AppointmentRepository;
+
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -31,6 +37,7 @@ public class DoctorScheduleService {
     private final DoctorScheduleRepository doctorScheduleRepository;
     private final DoctorRepository doctorRepository;
     private final SlotGenerationService slotGenerationService;
+    private final AppointmentRepository appointmentRepository;
 
     @Transactional
     public DoctorScheduleResponse createSchedule(CreateDoctorScheduleRequest request) {
@@ -186,10 +193,39 @@ public class DoctorScheduleService {
             allSlots.addAll(slotGenerationService.generateSlots(schedule));
         }
 
+        // Fetch already booked slots for this doctor on this date
+        List<AppointmentStatus> activeStatuses = List.of(
+                AppointmentStatus.BOOKED,
+                AppointmentStatus.CONFIRMED,
+                AppointmentStatus.CHECKED_IN,
+                AppointmentStatus.IN_PROGRESS
+        );
+        Set<LocalTime> bookedStartTimes = appointmentRepository
+                .findByDoctorIdAndAppointmentDateAndStatusIn(doctor.getId(), date, activeStatuses)
+                .stream()
+                .map(Appointment::getStartTime)
+                .collect(Collectors.toSet());
+
+        LocalDate today = LocalDate.now();
+        LocalTime now = LocalTime.now();
+
+        List<AvailableSlotDto> markedSlots = allSlots.stream()
+                .map(slot -> {
+                    boolean isPast = date.isBefore(today) || (date.isEqual(today) && !slot.getStartTime().isAfter(now));
+                    boolean isBooked = bookedStartTimes.contains(slot.getStartTime());
+                    boolean available = slot.isAvailable() && !isPast && !isBooked;
+                    return AvailableSlotDto.builder()
+                            .startTime(slot.getStartTime())
+                            .endTime(slot.getEndTime())
+                            .available(available)
+                            .build();
+                })
+                .collect(Collectors.toList());
+
         return DoctorAvailabilityResponse.builder()
                 .doctorId(doctorId)
                 .date(date.toString())
-                .slots(allSlots)
+                .slots(markedSlots)
                 .build();
     }
 
@@ -242,6 +278,7 @@ public class DoctorScheduleService {
         boolean hasAccess = currentUser.getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_HOSPITAL_ADMIN") ||
                                a.getAuthority().equals("ROLE_PLATFORM_ADMIN") ||
+                               a.getAuthority().equals("ROLE_RECEPTIONIST") ||
                                a.getAuthority().equals("ROLE_DOCTOR"));
         if (!hasAccess) {
             throw new AccessDeniedException("You do not have permission to view doctor schedules");
@@ -249,9 +286,11 @@ public class DoctorScheduleService {
     }
 
     private void verifyViewPermission(UserPrincipal currentUser, DoctorSchedule schedule) {
-        boolean isAdmin = currentUser.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_HOSPITAL_ADMIN") || a.getAuthority().equals("ROLE_PLATFORM_ADMIN"));
-        if (isAdmin) {
+        boolean isStaffWithAccess = currentUser.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_HOSPITAL_ADMIN") ||
+                               a.getAuthority().equals("ROLE_PLATFORM_ADMIN") ||
+                               a.getAuthority().equals("ROLE_RECEPTIONIST"));
+        if (isStaffWithAccess) {
             return;
         }
 

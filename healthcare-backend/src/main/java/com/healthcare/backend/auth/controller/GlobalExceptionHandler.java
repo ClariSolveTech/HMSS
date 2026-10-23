@@ -100,6 +100,17 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(response, HttpStatus.CONFLICT);
     }
 
+    // 502 Bad Gateway — Teleconsultation Provider Error
+    @ExceptionHandler(com.healthcare.backend.teleconsult.exception.TeleconsultationException.class)
+    public ResponseEntity<ErrorResponse> handleTeleconsultationException(com.healthcare.backend.teleconsult.exception.TeleconsultationException ex) {
+        ErrorResponse response = new ErrorResponse(
+                HttpStatus.BAD_GATEWAY.value(),
+                "Teleconsultation Provider Error",
+                ex.getMessage()
+        );
+        return new ResponseEntity<>(response, HttpStatus.BAD_GATEWAY);
+    }
+
     // 500 Internal Server Error — Fallback without exposing stack trace
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(Exception ex) {

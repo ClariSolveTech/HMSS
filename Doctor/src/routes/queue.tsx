@@ -1,7 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { toast } from "sonner";
 
 import { AppShell, PageHeader } from "@/components/layout/app-shell";
 import { QueuePanel } from "@/components/dashboard/queue-panel";
+import { isAuthenticated, isDoctor } from "@/lib/auth";
 
 export const Route = createFileRoute("/queue")({
   head: () => ({
@@ -19,7 +22,25 @@ export const Route = createFileRoute("/queue")({
       },
     ],
   }),
-  component: () => (
+  component: DoctorQueuePage,
+});
+
+function DoctorQueuePage() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      navigate({ to: "/login" });
+      return;
+    }
+    if (!isDoctor()) {
+      toast.error("Unauthorized: Doctor queue is restricted");
+      navigate({ to: "/receptionist" });
+      return;
+    }
+  }, [navigate]);
+
+  return (
     <AppShell>
       <div className="space-y-6 p-4 sm:p-6">
         <PageHeader
@@ -29,5 +50,5 @@ export const Route = createFileRoute("/queue")({
         <QueuePanel />
       </div>
     </AppShell>
-  ),
-});
+  );
+}

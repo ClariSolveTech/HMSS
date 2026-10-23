@@ -24,6 +24,8 @@ public class CreateAppointmentRequest {
     private BookingSource bookingSource = BookingSource.RECEPTION;
     private String reason;
     private String notes;
+    private String meetUrl;
+    private String teleconsultationSpaceId;
 
     public CreateAppointmentRequest() {
     }
@@ -90,5 +92,21 @@ public class CreateAppointmentRequest {
 
     public void setNotes(String notes) {
         this.notes = notes;
+    }
+
+    public String getMeetUrl() {
+        return meetUrl;
+    }
+
+    public void setMeetUrl(String meetUrl) {
+        this.meetUrl = meetUrl;
+    }
+
+    public String getTeleconsultationSpaceId() {
+        return teleconsultationSpaceId;
+    }
+
+    public void setTeleconsultationSpaceId(String teleconsultationSpaceId) {
+        this.teleconsultationSpaceId = teleconsultationSpaceId;
     }
 }

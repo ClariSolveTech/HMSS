@@ -42,10 +42,11 @@ public class PatientController {
 
     @GetMapping
     public ResponseEntity<Page<PatientResponse>> getPatients(
+            @RequestParam(required = false) String search,
             @PageableDefault(size = 20, sort = "createdAt") Pageable pageable,
             @AuthenticationPrincipal UserPrincipal principal
     ) {
-        Page<PatientResponse> response = patientService.getPatients(pageable, principal);
+        Page<PatientResponse> response = patientService.getPatients(search, pageable, principal);
         return ResponseEntity.ok(response);
     }
 
@@ -56,6 +57,16 @@ public class PatientController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         PatientResponse response = patientService.updatePatient(id, request, principal);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{id}/generate-activation-code")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('HOSPITAL_ADMIN', 'RECEPTIONIST')")
+    public ResponseEntity<com.healthcare.backend.patient.dto.PatientActivationCodeResponse> generateActivationCode(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        com.healthcare.backend.patient.dto.PatientActivationCodeResponse response = patientService.generateActivationCode(id, principal);
         return ResponseEntity.ok(response);
     }
 }

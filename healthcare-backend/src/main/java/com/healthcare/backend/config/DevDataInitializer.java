@@ -52,9 +52,10 @@ public class DevDataInitializer implements CommandLineRunner {
         Role doctorRole = seedRole(RoleName.DOCTOR);
         seedRole(RoleName.HOSPITAL_ADMIN);
         seedRole(RoleName.PLATFORM_ADMIN);
-        seedRole(RoleName.RECEPTIONIST);
+        Role receptionistRole = seedRole(RoleName.RECEPTIONIST);
         seedRole(RoleName.LAB_STAFF);
         seedRole(RoleName.PHARMACY_STAFF);
+        seedRole(RoleName.PATIENT);
 
         // Seed Hospital
         Hospital hospital = hospitalRepository.findByCode("CCH001")
@@ -85,6 +86,23 @@ public class DevDataInitializer implements CommandLineRunner {
                 });
         doctorUser.setPasswordHash(passwordEncoder.encode("Doctor@123"));
         User savedUser = userRepository.save(doctorUser);
+
+        // Seed Receptionist User & Ensure Development Password Hash
+        String recepEmail = "receptionist@citycentral.com";
+        User recepUser = userRepository.findByEmail(recepEmail)
+                .orElseGet(() -> {
+                    User u = new User();
+                    u.setFirstName("Maya");
+                    u.setLastName("Sharma");
+                    u.setEmail(recepEmail);
+                    u.setMobileNumber("9876543220");
+                    u.setHospital(hospital);
+                    u.setRoles(Set.of(receptionistRole));
+                    u.setStatus(UserStatus.ACTIVE);
+                    return u;
+                });
+        recepUser.setPasswordHash(passwordEncoder.encode("Recep@123"));
+        userRepository.save(recepUser);
 
         // Seed Doctor Profile & Synchronize User / Hospital Relationship
         Doctor doctor = doctorRepository.findByUserId(savedUser.getId())

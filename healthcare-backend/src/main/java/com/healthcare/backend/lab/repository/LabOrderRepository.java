@@ -32,4 +32,6 @@ public interface LabOrderRepository extends JpaRepository<LabOrder, Long> {
     long countByHospitalId(Long hospitalId);
 
     long countByHospitalIdAndStatus(Long hospitalId, LabOrderStatus status);
+
+    long countByPatientIdAndHospitalId(Long patientId, Long hospitalId);
 }

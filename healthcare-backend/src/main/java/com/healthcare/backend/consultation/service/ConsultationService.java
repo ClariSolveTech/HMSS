@@ -16,6 +16,10 @@ import com.healthcare.backend.hospital.entity.Hospital;
 import com.healthcare.backend.hospital.repository.HospitalRepository;
 import com.healthcare.backend.patient.entity.Patient;
 import com.healthcare.backend.patient.repository.PatientRepository;
+import com.healthcare.backend.notification.dto.CreateNotificationRequest;
+import com.healthcare.backend.notification.entity.NotificationPriority;
+import com.healthcare.backend.notification.entity.NotificationType;
+import com.healthcare.backend.notification.service.NotificationService;
 import com.healthcare.backend.queue.entity.QueueEntry;
 import com.healthcare.backend.queue.entity.QueueStatus;
 import com.healthcare.backend.queue.repository.QueueEntryRepository;
@@ -43,6 +47,7 @@ public class ConsultationService {
     private final AppointmentRepository appointmentRepository;
     private final QueueEntryRepository queueEntryRepository;
     private final QueueService queueService;
+    private final NotificationService notificationService;
 
     @Transactional
     public ConsultationResponse createConsultation(CreateConsultationRequest request) {
@@ -225,6 +230,8 @@ public class ConsultationService {
             queueService.completeConsultation(consultation.getQueueEntry().getId());
         }
 
+        createConsultationCompletedNotification(updated);
+
         return ConsultationResponse.fromEntity(updated);
     }
 
@@ -263,6 +270,38 @@ public class ConsultationService {
             if (loggedInDoctor != null && !loggedInDoctor.getId().equals(doctor.getId())) {
                 throw new AccessDeniedException("Doctors can only access their own consultations");
             }
+        }
+    }
+
+    private void createConsultationCompletedNotification(Consultation consultation) {
+        if (notificationService == null || consultation == null || consultation.getDoctor() == null ||
+                consultation.getDoctor().getUser() == null || consultation.getHospital() == null) {
+            return;
+        }
+        try {
+            Long hospitalId = consultation.getHospital().getId();
+            Long recipientUserId = consultation.getDoctor().getUser().getId();
+            if (notificationService.existsDuplicate(hospitalId, recipientUserId, NotificationType.CONSULTATION_COMPLETED, "CONSULTATION", consultation.getId())) {
+                return;
+            }
+
+            Patient patient = consultation.getPatient();
+            String patientName = patient != null ? ((patient.getFirstName() != null ? patient.getFirstName() : "") +
+                    (patient.getLastName() != null && !patient.getLastName().isBlank() ? " " + patient.getLastName() : "")).trim() : "Patient";
+
+            CreateNotificationRequest req = new CreateNotificationRequest();
+            req.setHospitalId(hospitalId);
+            req.setRecipientUserId(recipientUserId);
+            req.setType(NotificationType.CONSULTATION_COMPLETED);
+            req.setTitle("Consultation Completed");
+            req.setMessage("Consultation #" + consultation.getId() + " for " + patientName + " has been completed.");
+            req.setPriority(NotificationPriority.NORMAL);
+            req.setReferenceType("CONSULTATION");
+            req.setReferenceId(consultation.getId());
+
+            notificationService.createNotification(req);
+        } catch (Exception ignored) {
+            // Safe fallback so core consultation operation is preserved
         }
     }
 }

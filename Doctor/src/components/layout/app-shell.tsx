@@ -1,6 +1,6 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "motion/react";
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import {
   Activity,
   Bell,
@@ -22,6 +22,7 @@ import {
   Users,
   X,
   Circle,
+  CheckCircle2,
 } from "lucide-react";
 
 import { toast } from "sonner";
@@ -29,7 +30,16 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { doctor, notifications } from "@/lib/healthcare-data";
 import type { DoctorStatus } from "@/lib/healthcare-data";
-import { getAuthUser, logout } from "@/lib/auth";
+import {
+  getAuthUser,
+  logout,
+  isAuthenticated,
+  isDoctor,
+  isReceptionist,
+  isOnlyReceptionist,
+  isPatient,
+  isStaff,
+} from "@/lib/auth";
 import { queueApi } from "@/services/queue-api";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,7 +55,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 import { NotificationDropdown } from "@/components/notifications/NotificationDropdown";
 
-const nav = [
+const doctorNav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/today", label: "Today's Patients", icon: Users },
   { to: "/appointments", label: "Appointments", icon: CalendarDays },
@@ -61,6 +71,15 @@ const nav = [
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
+const receptionistNav = [
+  { to: "/receptionist", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/receptionist/patients", label: "Patients", icon: Users },
+  { to: "/receptionist/appointments", label: "Appointments", icon: CalendarDays },
+  { to: "/receptionist/check-in", label: "Check-In", icon: CheckCircle2 },
+  { to: "/receptionist/queue", label: "Live Queue", icon: ListOrdered },
+  { to: "/notifications", label: "Notifications", icon: Bell },
+] as const;
+
 const statusMeta: Record<DoctorStatus, { label: string; className: string }> = {
   available: { label: "Available", className: "text-success" },
   consulting: { label: "Consulting", className: "text-primary" },
@@ -71,15 +90,17 @@ const statusMeta: Record<DoctorStatus, { label: string; className: string }> = {
 };
 
 function Brand() {
+  const isRecep = isOnlyReceptionist();
+  const homePath = isRecep ? "/receptionist" : "/";
   return (
-    <Link to="/" className="flex items-center gap-2.5">
+    <Link to={homePath} className="flex items-center gap-2.5">
       <span className="brand-gradient grid size-9 shrink-0 place-items-center rounded-xl text-primary-foreground shadow-float">
         <Stethoscope className="size-5" />
       </span>
       <span className="min-w-0">
         <span className="block truncate text-[15px] font-extrabold leading-tight">Meridian</span>
         <span className="block truncate text-[11px] font-medium leading-tight text-muted-foreground">
-          Health OS
+          {isRecep ? "Reception OS" : "Health OS"}
         </span>
       </span>
     </Link>
@@ -88,10 +109,16 @@ function Brand() {
 
 function NavList({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isRecep = isOnlyReceptionist();
+  const items = isRecep ? receptionistNav : doctorNav;
+
   return (
     <nav className="flex flex-col gap-1 px-3 pb-6">
-      {nav.map((item) => {
-        const active = item.to === "/" ? pathname === "/" : pathname.startsWith(item.to);
+      {items.map((item) => {
+        const active =
+          item.to === "/" || item.to === "/receptionist"
+            ? pathname === item.to
+            : pathname.startsWith(item.to);
         return (
           <Link
             key={item.to}
@@ -100,7 +127,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
             className={cn(
               "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
               active
-                ? "text-sidebar-accent-foreground"
+                ? "text-sidebar-accent-foreground font-semibold"
                 : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
             )}
           >
@@ -176,9 +203,39 @@ export function AppShell({
   children: ReactNode;
   aiPanel?: ReactNode;
 }) {
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [status, setStatus] = useState<DoctorStatus>("consulting");
   const authUser = getAuthUser();
+  const isRecep = isOnlyReceptionist();
+  const doctorUser = isDoctor();
+  const authenticated = isAuthenticated();
+
+  useEffect(() => {
+    if (!authenticated) {
+      navigate({ to: "/login" });
+      return;
+    }
+
+    if (isPatient() && !isStaff()) {
+      toast.error("Unauthorized: Staff workspace is restricted to hospital personnel");
+      navigate({ to: "/patient/dashboard" });
+      return;
+    }
+
+    const isReceptionistRoute =
+      pathname === "/receptionist" || pathname.startsWith("/receptionist/");
+    const isSharedRoute = pathname === "/notifications";
+
+    if (isRecep && !isReceptionistRoute && !isSharedRoute) {
+      toast.error("Unauthorized: Doctor clinical workspace is restricted");
+      navigate({ to: "/receptionist" });
+    } else if (doctorUser && !isReceptionist() && isReceptionistRoute) {
+      toast.error("Unauthorized: Receptionist front desk is restricted");
+      navigate({ to: "/" });
+    }
+  }, [authenticated, isRecep, doctorUser, pathname, navigate]);
 
   const handleStatusChange = async (s: DoctorStatus) => {
     setStatus(s);
@@ -196,7 +253,15 @@ export function AppShell({
     }
   };
 
-  const displayName = authUser?.email ? authUser.email.split("@")[0]?.replace(".", " ") ?? doctor.name : doctor.name;
+  const displayName = isRecep
+    ? authUser?.firstName
+      ? `${authUser.firstName} ${authUser.lastName || ""}`.trim()
+      : "Reception Desk"
+    : authUser?.email
+      ? authUser.email.split("@")[0]?.replace(".", " ") ?? doctor.name
+      : doctor.name;
+
+  const roleSubtitle = isRecep ? "Receptionist · CCH001" : doctor.specialty;
 
   return (
     <div className="min-h-screen bg-background">
@@ -218,51 +283,70 @@ export function AppShell({
         </div>
 
         <div className="ml-auto flex items-center gap-1 sm:gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="hidden rounded-xl md:flex">
-                <Circle className={cn("size-2.5 fill-current", statusMeta[status].className)} />
-                <span className="text-xs font-semibold">{statusMeta[status].label}</span>
-                <ChevronDown className="size-3.5 opacity-60" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Doctor status</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {(Object.keys(statusMeta) as DoctorStatus[]).map((s) => (
-                <DropdownMenuItem key={s} onClick={() => handleStatusChange(s)}>
-                  <Circle className={cn("size-2.5 fill-current", statusMeta[s].className)} />
-                  {statusMeta[s].label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {!isRecep && (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="hidden rounded-xl md:flex">
+                    <Circle className={cn("size-2.5 fill-current", statusMeta[status].className)} />
+                    <span className="text-xs font-semibold">{statusMeta[status].label}</span>
+                    <ChevronDown className="size-3.5 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>Doctor status</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {(Object.keys(statusMeta) as DoctorStatus[]).map((s) => (
+                    <DropdownMenuItem key={s} onClick={() => handleStatusChange(s)}>
+                      <Circle className={cn("size-2.5 fill-current", statusMeta[s].className)} />
+                      {statusMeta[s].label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-          <Button variant="ghost" size="icon" className="rounded-xl text-primary">
-            <Sparkles className="size-[18px]" />
-            <span className="sr-only">AI Assistant</span>
-          </Button>
+              <Button variant="ghost" size="icon" className="rounded-xl text-primary">
+                <Sparkles className="size-[18px]" />
+                <span className="sr-only">AI Assistant</span>
+              </Button>
+            </>
+          )}
+
+          {isRecep && (
+            <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold bg-muted text-muted-foreground border">
+              City Central Hospital (CCH001)
+            </span>
+          )}
+
           <NotificationDropdown />
-          <Link to="/settings" className="hidden sm:block">
-            <Button variant="ghost" size="icon" className="rounded-xl">
-              <Settings className="size-[18px]" />
-            </Button>
-          </Link>
+          {!isRecep && (
+            <Link to="/settings" className="hidden sm:block">
+              <Button variant="ghost" size="icon" className="rounded-xl">
+                <Settings className="size-[18px]" />
+              </Button>
+            </Link>
+          )}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-2 rounded-xl py-1 pl-1 pr-2 transition-colors hover:bg-muted">
-                <img
-                  src={doctor.photo}
-                  alt={displayName}
-                  className="size-9 rounded-lg border object-cover"
-                />
+                {isRecep ? (
+                  <div className="size-9 rounded-lg border bg-primary/10 text-primary grid place-items-center font-bold text-xs shrink-0">
+                    RD
+                  </div>
+                ) : (
+                  <img
+                    src={doctor.photo}
+                    alt={displayName}
+                    className="size-9 rounded-lg border object-cover"
+                  />
+                )}
                 <span className="hidden min-w-0 text-left sm:block">
                   <span className="block truncate text-[13px] font-semibold leading-tight capitalize">
                     {displayName}
                   </span>
                   <span className="block truncate text-[11px] leading-tight text-muted-foreground">
-                    {doctor.specialty}
+                    {roleSubtitle}
                   </span>
                 </span>
               </button>
@@ -273,11 +357,13 @@ export function AppShell({
                 <p className="text-xs text-muted-foreground">{authUser?.email || doctor.regNo}</p>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link to="/settings">
-                  <Settings className="size-4" /> Settings
-                </Link>
-              </DropdownMenuItem>
+              {!isRecep && (
+                <DropdownMenuItem asChild>
+                  <Link to="/settings">
+                    <Settings className="size-4" /> Settings
+                  </Link>
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive cursor-pointer"
                 onClick={() => logout()}

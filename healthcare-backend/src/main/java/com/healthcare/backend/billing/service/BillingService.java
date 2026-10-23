@@ -17,6 +17,10 @@ import com.healthcare.backend.hospital.entity.Hospital;
 import com.healthcare.backend.hospital.repository.HospitalRepository;
 import com.healthcare.backend.patient.entity.Patient;
 import com.healthcare.backend.patient.repository.PatientRepository;
+import com.healthcare.backend.notification.dto.CreateNotificationRequest;
+import com.healthcare.backend.notification.entity.NotificationPriority;
+import com.healthcare.backend.notification.entity.NotificationType;
+import com.healthcare.backend.notification.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -49,6 +53,7 @@ public class BillingService {
     private final PatientRepository patientRepository;
     private final AppointmentRepository appointmentRepository;
     private final ConsultationRepository consultationRepository;
+    private final NotificationService notificationService;
 
     @Transactional
     public InvoiceResponse createInvoice(CreateInvoiceRequest request) {
@@ -239,6 +244,9 @@ public class BillingService {
         }
 
         invoiceRepository.save(invoice);
+
+        createPaymentReceivedNotification(savedPayment, invoice);
+
         return PaymentResponse.fromEntity(savedPayment);
     }
 
@@ -401,5 +409,37 @@ public class BillingService {
             payRef = String.format("PAY-%s-%05d", datePrefix, seq % 100000L);
         } while (paymentRepository.existsByPaymentReferenceAndHospitalId(payRef, hospitalId));
         return payRef;
+    }
+
+    private void createPaymentReceivedNotification(Payment payment, Invoice invoice) {
+        if (notificationService == null || payment == null || invoice == null || invoice.getDoctor() == null ||
+                invoice.getDoctor().getUser() == null || invoice.getHospital() == null) {
+            return;
+        }
+        try {
+            Long hospitalId = invoice.getHospital().getId();
+            Long recipientUserId = invoice.getDoctor().getUser().getId();
+            if (notificationService.existsDuplicate(hospitalId, recipientUserId, NotificationType.PAYMENT_RECEIVED, "PAYMENT", payment.getId())) {
+                return;
+            }
+
+            Patient patient = invoice.getPatient();
+            String patientName = patient != null ? ((patient.getFirstName() != null ? patient.getFirstName() : "") +
+                    (patient.getLastName() != null && !patient.getLastName().isBlank() ? " " + patient.getLastName() : "")).trim() : "Patient";
+
+            CreateNotificationRequest req = new CreateNotificationRequest();
+            req.setHospitalId(hospitalId);
+            req.setRecipientUserId(recipientUserId);
+            req.setType(NotificationType.PAYMENT_RECEIVED);
+            req.setTitle("Payment Received");
+            req.setMessage("Payment of " + payment.getAmount() + " received for invoice #" + invoice.getInvoiceNumber() + " (" + patientName + ").");
+            req.setPriority(NotificationPriority.NORMAL);
+            req.setReferenceType("PAYMENT");
+            req.setReferenceId(payment.getId());
+
+            notificationService.createNotification(req);
+        } catch (Exception ignored) {
+            // Safe fallback so core billing operation is preserved
+        }
     }
 }

@@ -16,6 +16,10 @@ import com.healthcare.backend.prescription.entity.PrescriptionItem;
 import com.healthcare.backend.prescription.entity.PrescriptionStatus;
 import com.healthcare.backend.prescription.repository.PrescriptionItemRepository;
 import com.healthcare.backend.prescription.repository.PrescriptionRepository;
+import com.healthcare.backend.notification.dto.CreateNotificationRequest;
+import com.healthcare.backend.notification.entity.NotificationPriority;
+import com.healthcare.backend.notification.entity.NotificationType;
+import com.healthcare.backend.notification.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -37,6 +41,7 @@ public class PrescriptionService {
     private final ConsultationRepository consultationRepository;
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
+    private final NotificationService notificationService;
 
     @Transactional
     public PrescriptionResponse createPrescription(CreatePrescriptionRequest request) {
@@ -170,6 +175,7 @@ public class PrescriptionService {
         prescription.setIssuedAt(LocalDateTime.now());
 
         Prescription updated = prescriptionRepository.save(prescription);
+        createPrescriptionIssuedNotification(updated);
         return PrescriptionResponse.fromEntity(updated);
     }
 
@@ -203,6 +209,38 @@ public class PrescriptionService {
             if (loggedInDoctor != null && !loggedInDoctor.getId().equals(doctor.getId())) {
                 throw new AccessDeniedException("Doctors can only access their own prescriptions");
             }
+        }
+    }
+
+    private void createPrescriptionIssuedNotification(Prescription prescription) {
+        if (notificationService == null || prescription == null || prescription.getDoctor() == null ||
+                prescription.getDoctor().getUser() == null || prescription.getHospital() == null) {
+            return;
+        }
+        try {
+            Long hospitalId = prescription.getHospital().getId();
+            Long recipientUserId = prescription.getDoctor().getUser().getId();
+            if (notificationService.existsDuplicate(hospitalId, recipientUserId, NotificationType.PRESCRIPTION_ISSUED, "PRESCRIPTION", prescription.getId())) {
+                return;
+            }
+
+            Patient patient = prescription.getPatient();
+            String patientName = patient != null ? ((patient.getFirstName() != null ? patient.getFirstName() : "") +
+                    (patient.getLastName() != null && !patient.getLastName().isBlank() ? " " + patient.getLastName() : "")).trim() : "Patient";
+
+            CreateNotificationRequest req = new CreateNotificationRequest();
+            req.setHospitalId(hospitalId);
+            req.setRecipientUserId(recipientUserId);
+            req.setType(NotificationType.PRESCRIPTION_ISSUED);
+            req.setTitle("Prescription Issued");
+            req.setMessage("Prescription " + prescription.getPrescriptionCode() + " has been issued for " + patientName + ".");
+            req.setPriority(NotificationPriority.NORMAL);
+            req.setReferenceType("PRESCRIPTION");
+            req.setReferenceId(prescription.getId());
+
+            notificationService.createNotification(req);
+        } catch (Exception ignored) {
+            // Safe fallback so core prescription operation is preserved
         }
     }
 }

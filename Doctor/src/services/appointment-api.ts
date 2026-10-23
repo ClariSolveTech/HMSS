@@ -3,25 +3,12 @@ import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
 
 export type AppointmentStatus =
-  | "BOOKED"
-  | "CONFIRMED"
-  | "CHECKED_IN"
-  | "IN_PROGRESS"
-  | "COMPLETED"
-  | "CANCELLED"
-  | "NO_SHOW";
+  "BOOKED" | "CONFIRMED" | "CHECKED_IN" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
 
 export type AppointmentType =
-  | "NEW_CONSULTATION"
-  | "FOLLOW_UP"
-  | "EMERGENCY"
-  | "WALK_IN";
+  "NEW_CONSULTATION" | "FOLLOW_UP" | "EMERGENCY" | "WALK_IN" | "TELECONSULTATION";
 
-export type BookingSource =
-  | "RECEPTION"
-  | "PATIENT_PORTAL"
-  | "DOCTOR"
-  | "WALK_IN";
+export type BookingSource = "RECEPTION" | "PATIENT_PORTAL" | "DOCTOR" | "WALK_IN";
 
 export interface AppointmentResponse {
   id: number;
@@ -44,6 +31,9 @@ export interface AppointmentResponse {
   cancelledAt?: string | undefined;
   createdAt: string;
   updatedAt: string;
+  meetUrl?: string | undefined;
+  teleconsultationSpaceId?: string | undefined;
+  isTeleconsultation?: boolean | undefined;
 }
 
 export interface CreateAppointmentRequest {
@@ -55,6 +45,8 @@ export interface CreateAppointmentRequest {
   bookingSource?: BookingSource | undefined;
   reason?: string | undefined;
   notes?: string | undefined;
+  meetUrl?: string | undefined;
+  teleconsultationSpaceId?: string | undefined;
 }
 
 export interface RescheduleAppointmentRequest {
@@ -108,7 +100,9 @@ export const appointmentApi = {
     if (params?.size !== undefined) query.set("size", String(params.size));
     if (params?.sort && params.sort.length > 0) query.set("sort", params.sort.join(","));
     const queryString = query.toString();
-    return apiClient.get<SpringPage<AppointmentResponse>>(`/api/v1/appointments${queryString ? `?${queryString}` : ""}`);
+    return apiClient.get<SpringPage<AppointmentResponse>>(
+      `/api/v1/appointments${queryString ? `?${queryString}` : ""}`,
+    );
   },
 
   getTodayAppointments: (doctorId?: number, page = 0, size = 20) => {
@@ -124,7 +118,7 @@ export const appointmentApi = {
     appointmentType?: AppointmentType,
     search?: string,
     page = 0,
-    size = 20
+    size = 20,
   ) => {
     let url = `/api/v1/doctors/${doctorId}/appointments?page=${page}&size=${size}`;
     if (date) url += `&date=${date}`;
@@ -135,7 +129,9 @@ export const appointmentApi = {
   },
 
   getPatientAppointments: (patientId: number, page = 0, size = 20) =>
-    apiClient.get<SpringPage<AppointmentResponse>>(`/api/v1/patients/${patientId}/appointments?page=${page}&size=${size}`),
+    apiClient.get<SpringPage<AppointmentResponse>>(
+      `/api/v1/patients/${patientId}/appointments?page=${page}&size=${size}`,
+    ),
 
   confirmAppointment: (id: number) =>
     apiClient.patch<AppointmentResponse>(`/api/v1/appointments/${id}/confirm`),
@@ -147,17 +143,33 @@ export const appointmentApi = {
     apiClient.patch<AppointmentResponse>(`/api/v1/appointments/${id}/no-show`),
 
   cancelAppointment: (id: number, reason?: string) =>
-    apiClient.patch<AppointmentResponse>(`/api/v1/appointments/${id}/cancel`, reason ? { reason } : {}),
+    apiClient.patch<AppointmentResponse>(
+      `/api/v1/appointments/${id}/cancel`,
+      reason ? { reason } : {},
+    ),
 
   rescheduleAppointment: (id: number, data: RescheduleAppointmentRequest) =>
     apiClient.patch<AppointmentResponse>(`/api/v1/appointments/${id}/reschedule`, data),
+
+  startOrProvisionTeleconsultation: (id: number) =>
+    apiClient.post<AppointmentResponse>(`/api/v1/appointments/${id}/teleconsult`),
 };
 
 /* React Query Hooks */
 
 export function useAppointments(params?: GetAppointmentsParams) {
   return useQuery({
-    queryKey: ["appointments", params?.doctorId, params?.patientId, params?.appointmentDate, params?.status, params?.appointmentType, params?.search, params?.page, params?.size],
+    queryKey: [
+      "appointments",
+      params?.doctorId,
+      params?.patientId,
+      params?.appointmentDate,
+      params?.status,
+      params?.appointmentType,
+      params?.search,
+      params?.page,
+      params?.size,
+    ],
     queryFn: () => appointmentApi.getAppointments(params),
   });
 }
@@ -169,11 +181,20 @@ export function useDoctorAppointments(
   appointmentType?: AppointmentType,
   search?: string,
   page = 0,
-  size = 20
+  size = 20,
 ) {
   return useQuery({
     queryKey: ["doctor-appointments", doctorId, date, status, appointmentType, search, page, size],
-    queryFn: () => appointmentApi.getDoctorAppointments(doctorId, date, status, appointmentType, search, page, size),
+    queryFn: () =>
+      appointmentApi.getDoctorAppointments(
+        doctorId,
+        date,
+        status,
+        appointmentType,
+        search,
+        page,
+        size,
+      ),
     enabled: Boolean(doctorId),
   });
 }
@@ -204,8 +225,8 @@ export function useConfirmAppointment() {
       queryClient.invalidateQueries({ queryKey: ["today-appointments"] });
       queryClient.invalidateQueries({ queryKey: ["appointment", res.id] });
     },
-    onError: (err: any) => {
-      toast.error(err.message || "Failed to confirm appointment");
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Failed to confirm appointment");
     },
   });
 }
@@ -223,8 +244,8 @@ export function useCheckInAppointment() {
       queryClient.invalidateQueries({ queryKey: ["doctor-queue"] });
       queryClient.invalidateQueries({ queryKey: ["doctor-current-token"] });
     },
-    onError: (err: any) => {
-      toast.error(err.message || "Failed to check in appointment");
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Failed to check in appointment");
     },
   });
 }
@@ -240,8 +261,8 @@ export function useMarkNoShow() {
       queryClient.invalidateQueries({ queryKey: ["today-appointments"] });
       queryClient.invalidateQueries({ queryKey: ["appointment", res.id] });
     },
-    onError: (err: any) => {
-      toast.error(err.message || "Failed to mark appointment as no-show");
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Failed to mark appointment as no-show");
     },
   });
 }
@@ -258,8 +279,8 @@ export function useCancelAppointment() {
       queryClient.invalidateQueries({ queryKey: ["today-appointments"] });
       queryClient.invalidateQueries({ queryKey: ["appointment", res.id] });
     },
-    onError: (err: any) => {
-      toast.error(err.message || "Failed to cancel appointment");
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Failed to cancel appointment");
     },
   });
 }
@@ -276,8 +297,8 @@ export function useRescheduleAppointment() {
       queryClient.invalidateQueries({ queryKey: ["today-appointments"] });
       queryClient.invalidateQueries({ queryKey: ["appointment", res.id] });
     },
-    onError: (err: any) => {
-      toast.error(err.message || "Failed to reschedule appointment");
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Failed to reschedule appointment");
     },
   });
 }

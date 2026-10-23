@@ -89,6 +89,12 @@ public class Appointment {
     @Column(name = "active_slot_key", length = 100)
     private String activeSlotKey;
 
+    @Column(name = "meet_url", length = 500)
+    private String meetUrl;
+
+    @Column(name = "teleconsultation_space_id", length = 255)
+    private String teleconsultationSpaceId;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -242,6 +248,26 @@ public class Appointment {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getMeetUrl() {
+        return meetUrl;
+    }
+
+    public void setMeetUrl(String meetUrl) {
+        this.meetUrl = meetUrl;
+    }
+
+    public String getTeleconsultationSpaceId() {
+        return teleconsultationSpaceId;
+    }
+
+    public void setTeleconsultationSpaceId(String teleconsultationSpaceId) {
+        this.teleconsultationSpaceId = teleconsultationSpaceId;
+    }
+
+    public boolean isTeleconsultation() {
+        return this.appointmentType == AppointmentType.TELECONSULTATION;
     }
 
     public static String buildActiveSlotKey(Long doctorId, LocalDate date, LocalTime startTime) {

@@ -4,5 +4,6 @@ public enum AppointmentType {
     NEW_CONSULTATION,
     FOLLOW_UP,
     EMERGENCY,
-    WALK_IN
+    WALK_IN,
+    TELECONSULTATION
 }

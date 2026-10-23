@@ -1,5 +1,6 @@
 package com.healthcare.backend.patient.entity;
 
+import com.healthcare.backend.auth.entity.User;
 import com.healthcare.backend.hospital.entity.Hospital;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -12,7 +13,8 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "patients", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_patient_code_hospital", columnNames = {"patientCode", "hospital_id"})
+        @UniqueConstraint(name = "uk_patient_code_hospital", columnNames = {"patientCode", "hospital_id"}),
+        @UniqueConstraint(name = "uk_patients_user", columnNames = {"user_id"})
 })
 @Getter
 @Setter
@@ -63,6 +65,10 @@ public class Patient {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "hospital_id", nullable = false)
     private Hospital hospital;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

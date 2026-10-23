@@ -26,6 +26,9 @@ import com.healthcare.backend.notification.dto.CreateNotificationRequest;
 import com.healthcare.backend.notification.entity.NotificationPriority;
 import com.healthcare.backend.notification.entity.NotificationType;
 import com.healthcare.backend.notification.service.NotificationService;
+import com.healthcare.backend.teleconsult.dto.TeleconsultationMeeting;
+import com.healthcare.backend.teleconsult.dto.TeleconsultationMeetingRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -45,6 +48,7 @@ import java.util.Set;
 import java.util.UUID;
 
 @Service
+@Slf4j
 public class AppointmentService {
 
     private static final Set<AppointmentStatus> ACTIVE_STATUSES = EnumSet.of(
@@ -60,6 +64,7 @@ public class AppointmentService {
     private final DoctorScheduleRepository doctorScheduleRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final com.healthcare.backend.teleconsult.service.TeleconsultationService teleconsultationService;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
@@ -67,7 +72,8 @@ public class AppointmentService {
             DoctorRepository doctorRepository,
             DoctorScheduleRepository doctorScheduleRepository,
             UserRepository userRepository,
-            NotificationService notificationService
+            NotificationService notificationService,
+            com.healthcare.backend.teleconsult.service.TeleconsultationService teleconsultationService
     ) {
         this.appointmentRepository = appointmentRepository;
         this.patientRepository = patientRepository;
@@ -75,6 +81,7 @@ public class AppointmentService {
         this.doctorScheduleRepository = doctorScheduleRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
+        this.teleconsultationService = teleconsultationService;
     }
 
     @Transactional
@@ -112,7 +119,39 @@ public class AppointmentService {
             throw new IllegalStateException("Doctor slot is already booked");
         }
 
-        // 7. Build Appointment
+        // 7. Determine appointment type & provision teleconsultation meeting if applicable
+        AppointmentType appointmentType = request.getAppointmentType() != null ? request.getAppointmentType() : AppointmentType.NEW_CONSULTATION;
+        String meetUrl = null;
+        String teleconsultationSpaceId = null;
+
+        if (appointmentType == AppointmentType.TELECONSULTATION) {
+            String doctorName = (doctor.getUser() != null)
+                    ? doctor.getUser().getFirstName() + " " + doctor.getUser().getLastName()
+                    : "Doctor";
+            String patientName = patient.getFirstName() + " " + patient.getLastName();
+
+            try {
+                com.healthcare.backend.teleconsult.dto.TeleconsultationMeeting meeting = teleconsultationService.createMeeting(
+                        com.healthcare.backend.teleconsult.dto.TeleconsultationMeetingRequest.builder()
+                                .hospitalId(hospitalId)
+                                .doctorId(doctor.getId())
+                                .doctorName(doctorName)
+                                .patientId(patient.getId())
+                                .patientName(patientName)
+                                .appointmentDate(request.getAppointmentDate())
+                                .startTime(request.getStartTime())
+                                .durationMinutes(schedule.getSlotDurationMinutes())
+                                .topic("Teleconsultation - " + doctorName)
+                                .build()
+                );
+                meetUrl = meeting.getMeetUrl();
+                teleconsultationSpaceId = meeting.getSpaceId();
+            } catch (com.healthcare.backend.teleconsult.exception.TeleconsultationException te) {
+                log.warn("Teleconsultation meeting could not be pre-provisioned at booking time: {}. Will be provisioned upon doctor session initiation.", te.getMessage());
+            }
+        }
+
+        // Build Appointment
         Appointment appointment = new Appointment();
         appointment.setHospital(patient.getHospital());
         appointment.setPatient(patient);
@@ -122,10 +161,12 @@ public class AppointmentService {
         appointment.setEndTime(endTime);
         appointment.setAppointmentNumber(generateAppointmentNumber(request.getAppointmentDate()));
         appointment.setStatus(AppointmentStatus.BOOKED);
-        appointment.setAppointmentType(request.getAppointmentType() != null ? request.getAppointmentType() : AppointmentType.NEW_CONSULTATION);
+        appointment.setAppointmentType(appointmentType);
         appointment.setBookingSource(request.getBookingSource() != null ? request.getBookingSource() : BookingSource.RECEPTION);
         appointment.setReason(request.getReason());
         appointment.setNotes(request.getNotes());
+        appointment.setMeetUrl(meetUrl);
+        appointment.setTeleconsultationSpaceId(teleconsultationSpaceId);
         appointment.setActiveSlotKey(Appointment.buildActiveSlotKey(doctor.getId(), request.getAppointmentDate(), request.getStartTime()));
 
         try {
@@ -142,6 +183,86 @@ public class AppointmentService {
         Appointment appointment = appointmentRepository.findByIdAndHospitalId(id, hospitalId)
                 .orElseThrow(() -> new NoSuchElementException("Appointment not found with ID: " + id));
         return mapToResponse(appointment);
+    }
+
+    @Transactional
+    public AppointmentResponse startOrProvisionTeleconsultation(Long id) {
+        Long hospitalId = SecurityUtils.getCurrentHospitalId();
+        UserPrincipal currentUser = SecurityUtils.getRequiredCurrentUserPrincipal();
+
+        Appointment appointment = appointmentRepository.findByIdAndHospitalId(id, hospitalId)
+                .orElseThrow(() -> new NoSuchElementException("Appointment not found with ID: " + id));
+
+        // 1. Doctor authorization check: if doctor, must be assigned doctor
+        boolean isStaffOrAdmin = currentUser.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_HOSPITAL_ADMIN") ||
+                               a.getAuthority().equals("ROLE_PLATFORM_ADMIN"));
+        if (!isStaffOrAdmin) {
+            Doctor doctor = doctorRepository.findByUserIdAndHospitalId(currentUser.getUserId(), hospitalId)
+                    .orElseThrow(() -> new AccessDeniedException("Doctor profile not found for user: " + currentUser.getUserId()));
+            if (!appointment.getDoctor().getId().equals(doctor.getId())) {
+                throw new AccessDeniedException("Doctor can only start video consultations for their own appointments");
+            }
+        }
+
+        // 2. Validate appointment type
+        if (appointment.getAppointmentType() != AppointmentType.TELECONSULTATION) {
+            throw new IllegalStateException("Appointment is an in-person consultation, not a teleconsultation");
+        }
+
+        // 3. Status eligibility check
+        AppointmentStatus status = appointment.getStatus();
+        if (status == AppointmentStatus.CANCELLED) {
+            throw new IllegalStateException("Cannot start video consultation: Appointment is cancelled");
+        }
+        if (status == AppointmentStatus.COMPLETED) {
+            throw new IllegalStateException("Cannot start video consultation: Appointment has already been completed");
+        }
+        if (status == AppointmentStatus.NO_SHOW) {
+            throw new IllegalStateException("Cannot start video consultation: Appointment was marked as no-show");
+        }
+
+        // 4. Provision meeting if not yet generated
+        if (appointment.getMeetUrl() == null || appointment.getMeetUrl().isBlank()) {
+            String docName = appointment.getDoctor().getUser() != null
+                    ? appointment.getDoctor().getUser().getFirstName() + " " + appointment.getDoctor().getUser().getLastName()
+                    : "Doctor";
+            String patName = appointment.getPatient() != null
+                    ? appointment.getPatient().getFirstName() + " " + appointment.getPatient().getLastName()
+                    : "Patient";
+
+            long durationMinutes = (appointment.getStartTime() != null && appointment.getEndTime() != null)
+                    ? Duration.between(appointment.getStartTime(), appointment.getEndTime()).toMinutes()
+                    : 15L;
+
+            TeleconsultationMeeting meeting = teleconsultationService.createMeeting(
+                    TeleconsultationMeetingRequest.builder()
+                            .appointmentId(appointment.getId())
+                            .hospitalId(hospitalId)
+                            .doctorId(appointment.getDoctor().getId())
+                            .doctorName(docName)
+                            .patientId(appointment.getPatient() != null ? appointment.getPatient().getId() : null)
+                            .patientName(patName)
+                            .appointmentDate(appointment.getAppointmentDate())
+                            .startTime(appointment.getStartTime())
+                            .durationMinutes((int) (durationMinutes > 0 ? durationMinutes : 15))
+                            .topic("Teleconsultation - " + docName)
+                            .build()
+            );
+            appointment.setMeetUrl(meeting.getMeetUrl());
+            appointment.setTeleconsultationSpaceId(meeting.getSpaceId());
+        }
+
+        // 5. Update appointment status to IN_PROGRESS if eligible
+        if (status == AppointmentStatus.BOOKED) {
+            transitionStatus(appointment, AppointmentStatus.CONFIRMED);
+            transitionStatus(appointment, AppointmentStatus.IN_PROGRESS);
+        } else if (status == AppointmentStatus.CONFIRMED || status == AppointmentStatus.CHECKED_IN) {
+            transitionStatus(appointment, AppointmentStatus.IN_PROGRESS);
+        }
+
+        Appointment saved = appointmentRepository.save(appointment);
+        return mapToResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -173,9 +294,11 @@ public class AppointmentService {
         UserPrincipal currentUser = SecurityUtils.getRequiredCurrentUserPrincipal();
         Long hospitalId = SecurityUtils.getCurrentHospitalId();
 
-        boolean isAdmin = currentUser.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_HOSPITAL_ADMIN") || a.getAuthority().equals("ROLE_PLATFORM_ADMIN"));
-        if (!isAdmin) {
+        boolean isStaffOrAdmin = currentUser.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_HOSPITAL_ADMIN") ||
+                               a.getAuthority().equals("ROLE_PLATFORM_ADMIN") ||
+                               a.getAuthority().equals("ROLE_RECEPTIONIST"));
+        if (!isStaffOrAdmin) {
             Doctor targetDoctor = doctorRepository.findByIdAndHospitalId(doctorId, hospitalId)
                     .orElseThrow(() -> new NoSuchElementException("Doctor not found with ID: " + doctorId));
             if (!targetDoctor.getUser().getId().equals(currentUser.getUserId())) {
@@ -205,6 +328,37 @@ public class AppointmentService {
         Long hospitalId = SecurityUtils.getCurrentHospitalId();
         Appointment appointment = appointmentRepository.findByIdAndHospitalId(id, hospitalId)
                 .orElseThrow(() -> new NoSuchElementException("Appointment not found with ID: " + id));
+
+        // Provision meeting idempotently if teleconsultation appointment lacks meeting details
+        if (appointment.getAppointmentType() == AppointmentType.TELECONSULTATION) {
+            if (appointment.getMeetUrl() == null || appointment.getMeetUrl().isBlank()) {
+                DoctorSchedule schedule = validateAndGetSchedule(
+                        appointment.getDoctor().getId(), hospitalId, appointment.getAppointmentDate(), appointment.getStartTime());
+                String docName = appointment.getDoctor().getUser() != null
+                        ? appointment.getDoctor().getUser().getFirstName() + " " + appointment.getDoctor().getUser().getLastName()
+                        : "Doctor";
+                String patName = appointment.getPatient() != null
+                        ? appointment.getPatient().getFirstName() + " " + appointment.getPatient().getLastName()
+                        : "Patient";
+
+                com.healthcare.backend.teleconsult.dto.TeleconsultationMeeting meeting = teleconsultationService.createMeeting(
+                        com.healthcare.backend.teleconsult.dto.TeleconsultationMeetingRequest.builder()
+                                .appointmentId(appointment.getId())
+                                .hospitalId(hospitalId)
+                                .doctorId(appointment.getDoctor().getId())
+                                .doctorName(docName)
+                                .patientId(appointment.getPatient() != null ? appointment.getPatient().getId() : null)
+                                .patientName(patName)
+                                .appointmentDate(appointment.getAppointmentDate())
+                                .startTime(appointment.getStartTime())
+                                .durationMinutes(schedule.getSlotDurationMinutes())
+                                .topic("Teleconsultation - " + docName)
+                                .build()
+                );
+                appointment.setMeetUrl(meeting.getMeetUrl());
+                appointment.setTeleconsultationSpaceId(meeting.getSpaceId());
+            }
+        }
 
         transitionStatus(appointment, AppointmentStatus.CONFIRMED);
         Appointment saved = appointmentRepository.save(appointment);
@@ -454,6 +608,9 @@ public class AppointmentService {
         res.setCancelledAt(appointment.getCancelledAt());
         res.setCreatedAt(appointment.getCreatedAt());
         res.setUpdatedAt(appointment.getUpdatedAt());
+        res.setMeetUrl(appointment.getMeetUrl());
+        res.setTeleconsultationSpaceId(appointment.getTeleconsultationSpaceId());
+        res.setIsTeleconsultation(appointment.isTeleconsultation());
         return res;
     }
 }

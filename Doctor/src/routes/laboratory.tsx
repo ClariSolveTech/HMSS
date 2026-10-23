@@ -1,9 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
 import { FlaskConical, PlusCircle, List, FileCheck, Search, Database } from "lucide-react";
+import { toast } from "sonner";
 
 import { AppShell, PageHeader } from "@/components/layout/app-shell";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { isAuthenticated, isDoctor } from "@/lib/auth";
 import { LabCatalogList } from "@/components/laboratory/lab-catalog-list";
 import { LabOrderForm } from "@/components/laboratory/lab-order-form";
 import { LabOrderList } from "@/components/laboratory/lab-order-list";
@@ -25,7 +27,20 @@ export const Route = createFileRoute("/laboratory")({
 });
 
 function LaboratoryPage() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("orders");
+
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      navigate({ to: "/login" });
+      return;
+    }
+    if (!isDoctor()) {
+      toast.error("Unauthorized: Laboratory workspace is doctor-only");
+      navigate({ to: "/receptionist" });
+      return;
+    }
+  }, [navigate]);
 
   return (
     <AppShell>

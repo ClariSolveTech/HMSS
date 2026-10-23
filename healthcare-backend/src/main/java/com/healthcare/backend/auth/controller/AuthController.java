@@ -2,6 +2,7 @@ package com.healthcare.backend.auth.controller;
 
 import com.healthcare.backend.auth.dto.AuthResponse;
 import com.healthcare.backend.auth.dto.LoginRequest;
+import com.healthcare.backend.auth.dto.PatientRegisterRequest;
 import com.healthcare.backend.auth.dto.RegisterRequest;
 import com.healthcare.backend.auth.service.AuthService;
 import jakarta.validation.Valid;
@@ -23,9 +24,21 @@ public class AuthController {
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
+    @PostMapping("/patient/register")
+    public ResponseEntity<AuthResponse> registerPatient(@Valid @RequestBody PatientRegisterRequest request) {
+        AuthResponse response = authService.registerPatient(request);
+        return new ResponseEntity<>(response, HttpStatus.CREATED);
+    }
+
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         AuthResponse response = authService.login(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/patient/activate")
+    public ResponseEntity<AuthResponse> activatePatient(@Valid @RequestBody com.healthcare.backend.auth.dto.PatientActivateRequest request) {
+        AuthResponse response = authService.activatePatient(request);
         return ResponseEntity.ok(response);
     }
 }

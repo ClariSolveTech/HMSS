@@ -37,31 +37,60 @@ function LoginPage() {
       const loginRes = await queueApi.login(emailOrMobile, password);
       setAccessToken(loginRes.accessToken);
 
+      const hasRecepRole = (loginRes.roles || []).some(
+        (r) => r.toUpperCase() === "RECEPTIONIST" || r.toUpperCase() === "ROLE_RECEPTIONIST"
+      );
+      const hasDoctorRole = (loginRes.roles || []).some(
+        (r) => r.toUpperCase() === "DOCTOR" || r.toUpperCase() === "ROLE_DOCTOR"
+      );
+
       // Fetch doctor profile if doctor role
       let doctorId: number | undefined;
-      try {
-        const doctorProfile = await queueApi.getDoctorProfileMe();
-        doctorId = doctorProfile.id;
-      } catch {
-        // If not doctor profile found yet, user info is still available
+      if (hasDoctorRole) {
+        try {
+          const doctorProfile = await queueApi.getDoctorProfileMe();
+          doctorId = doctorProfile.id;
+        } catch {
+          // If not doctor profile found yet, user info is still available
+        }
       }
 
       setAuthUser({
         userId: loginRes.userId,
         email: emailOrMobile,
-        firstName: "Doctor",
-        lastName: "",
+        firstName: loginRes.firstName || (hasRecepRole ? "Maya" : "Doctor"),
+        lastName: loginRes.lastName || (hasRecepRole ? "Sharma" : "Aarav"),
         hospitalId: loginRes.hospitalId,
         roles: loginRes.roles,
         ...(doctorId !== undefined ? { doctorId } : {}),
       });
 
+      const hasPatientRole = (loginRes.roles || []).some(
+        (r) => r.toUpperCase() === "PATIENT" || r.toUpperCase() === "ROLE_PATIENT"
+      );
+
       toast.success("Successfully logged in!");
-      navigate({ to: "/" });
+      if (hasPatientRole && !hasDoctorRole && !hasRecepRole) {
+        navigate({ to: "/patient/dashboard" });
+      } else if (hasRecepRole && !hasDoctorRole) {
+        navigate({ to: "/receptionist" });
+      } else {
+        navigate({ to: "/" });
+      }
     } catch (err: any) {
       toast.error(err.message || "Invalid credentials. Please try again.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const setRoleDemo = (role: "doctor" | "receptionist") => {
+    if (role === "doctor") {
+      setEmailOrMobile("dr.aarav@citycentral.com");
+      setPassword("Doctor@123");
+    } else {
+      setEmailOrMobile("receptionist@citycentral.com");
+      setPassword("Recep@123");
     }
   };
 
@@ -72,10 +101,30 @@ function LoginPage() {
           <div className="mx-auto grid size-12 place-items-center rounded-2xl brand-gradient text-primary-foreground shadow-float mb-4">
             <Stethoscope className="size-6" />
           </div>
-          <h1 className="text-2xl font-extrabold tracking-tight">Doctor Sign In</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">Meridian Sign In</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            Meridian Health OS · Live OPD Queue & Consultation
+            Meridian Health OS · City Central Hospital
           </p>
+          <div className="mt-3 flex justify-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-full text-xs"
+              onClick={() => setRoleDemo("doctor")}
+            >
+              Doctor Demo
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-full text-xs"
+              onClick={() => setRoleDemo("receptionist")}
+            >
+              Receptionist Demo
+            </Button>
+          </div>
         </div>
 
         <div className="surface-card rounded-2xl p-6 sm:p-8 shadow-sm">
@@ -124,6 +173,17 @@ function LoginPage() {
                 </>
               )}
             </Button>
+
+            <div className="pt-2 text-center text-sm border-t">
+              <span className="text-muted-foreground">Are you a patient? </span>
+              <button
+                type="button"
+                onClick={() => navigate({ to: "/patient/login" })}
+                className="font-medium text-primary hover:underline"
+              >
+                Go to Patient Portal &rarr;
+              </button>
+            </div>
           </form>
         </div>
 

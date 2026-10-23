@@ -1,7 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
 import { Clock, Stethoscope, Loader2, Calendar, AlertCircle, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 
 import { AppShell, PageHeader } from "@/components/layout/app-shell";
+import { isAuthenticated, isDoctor } from "@/lib/auth";
 import { useTodayAppointments, type AppointmentResponse, type AppointmentStatus } from "@/services/appointment-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +36,20 @@ const statusBadgeStyles: Record<AppointmentStatus, string> = {
 };
 
 function Today() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      navigate({ to: "/login" });
+      return;
+    }
+    if (!isDoctor()) {
+      toast.error("Unauthorized: Today's Patients workspace is doctor-only");
+      navigate({ to: "/receptionist" });
+      return;
+    }
+  }, [navigate]);
+
   const { data, isLoading, isError, error, refetch, isRefetching } = useTodayAppointments();
 
   const appointments: AppointmentResponse[] = data?.content || [];

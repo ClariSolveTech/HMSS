@@ -1,11 +1,13 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { BellRing, PhoneCall, Pill, RefreshCw, Loader2, Calendar, FileText } from "lucide-react";
+import { toast } from "sonner";
 
 import { AppShell, PageHeader } from "@/components/layout/app-shell";
 import { patients } from "@/lib/healthcare-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { isAuthenticated, isDoctor } from "@/lib/auth";
 import {
   prescriptionApi,
   PrescriptionResponse,
@@ -30,12 +32,26 @@ export const Route = createFileRoute("/prescriptions")({
 });
 
 function Prescriptions() {
+  const navigate = useNavigate();
   const [prescriptions, setPrescriptions] = useState<PrescriptionResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [selectedRx, setSelectedRx] = useState<PrescriptionResponse | null>(null);
 
   useEffect(() => {
+    if (!isAuthenticated()) {
+      navigate({ to: "/login" });
+      return;
+    }
+    if (!isDoctor()) {
+      toast.error("Unauthorized: Prescriptions workspace is doctor-only");
+      navigate({ to: "/receptionist" });
+      return;
+    }
+  }, [navigate]);
+
+  useEffect(() => {
+    if (!isDoctor()) return;
     let isMounted = true;
     async function loadDoctorPrescriptions() {
       setLoading(true);

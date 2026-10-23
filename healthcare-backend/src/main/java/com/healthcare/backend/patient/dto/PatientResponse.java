@@ -20,6 +20,7 @@ import java.time.LocalDateTime;
 public class PatientResponse {
 
     private Long id;
+    private Long userId;
     private String patientCode;
     private String firstName;
     private String lastName;

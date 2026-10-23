@@ -88,6 +88,8 @@ export interface LoginResponse {
   accessToken: string;
   tokenType: string;
   userId: number;
+  firstName?: string;
+  lastName?: string;
   roles: string[];
   hospitalId: number;
 }
@@ -129,9 +131,31 @@ export const queueApi = {
   cancelQueueEntry: (id: number, reason = "Cancelled") =>
     apiClient.patch<QueueEntryResponse>(`/api/v1/queue/${id}/cancel`, { reason }),
 
+  checkIn: (appointmentId: number) =>
+    apiClient.post<QueueEntryResponse>(`/api/v1/queue/check-in/${appointmentId}`),
+
+  createWalkIn: (data: {
+    doctorId: number;
+    patientId: number;
+    priority?: BackendQueuePriority;
+    notes?: string;
+  }) => apiClient.post<QueueEntryResponse>("/api/v1/queue", data),
+
+  getTodayQueue: (doctorId?: number, page = 0, size = 50) => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const today = `${year}-${month}-${day}`;
+    let url = `/api/v1/queue?date=${today}&page=${page}&size=${size}`;
+    if (doctorId !== undefined) url += `&doctorId=${doctorId}`;
+    return apiClient.get<SpringPage<QueueEntryResponse>>(url);
+  },
+
   updateDoctorOwnQueueStatus: (status: BackendDoctorQueueStatus) =>
     apiClient.patch<DoctorQueueStatusResponse>("/api/v1/doctors/me/queue/status", { status }),
 
   getDoctorQueueStatus: (doctorId: number) =>
     apiClient.get<DoctorQueueStatusResponse>(`/api/v1/doctors/${doctorId}/queue/status`),
 };
+

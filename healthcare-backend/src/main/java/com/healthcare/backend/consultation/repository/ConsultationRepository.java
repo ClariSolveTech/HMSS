@@ -39,4 +39,6 @@ public interface ConsultationRepository extends JpaRepository<Consultation, Long
             @Param("endDate") LocalDateTime endDate,
             Pageable pageable
     );
+
+    long countByPatientIdAndHospitalId(Long patientId, Long hospitalId);
 }

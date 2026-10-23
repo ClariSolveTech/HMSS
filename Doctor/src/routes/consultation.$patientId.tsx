@@ -1,5 +1,6 @@
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import {
   AlertTriangle,
@@ -18,6 +19,7 @@ import {
   UserPlus,
   CalendarClock,
   Loader2,
+  Video,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -32,7 +34,10 @@ import { PatientTimeline } from "@/components/consultation/patient-timeline";
 import { AIClinicalAssistant } from "@/components/consultation/ai-clinical-assistant";
 import { LabOrderForm } from "@/components/laboratory/lab-order-form";
 import { PatientLabHistory } from "@/components/laboratory/patient-lab-history";
+import { VideoConsultationCard } from "@/components/consultation/video-consultation-card";
 import { findPatient, labCatalog } from "@/lib/healthcare-data";
+import { patientApi } from "@/services/patient-api";
+import { appointmentApi, type AppointmentResponse } from "@/services/appointment-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -40,10 +45,13 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { isAuthenticated, isDoctor } from "@/lib/auth";
 import { consultationApi, ConsultationResponse } from "@/services/consultation-api";
 
 export const Route = createFileRoute("/consultation/$patientId")({
-  validateSearch: (search: Record<string, unknown>): { appointmentId?: number | undefined; queueEntryId?: number | undefined } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { appointmentId?: number | undefined; queueEntryId?: number | undefined } => ({
     appointmentId: search["appointmentId"] ? Number(search["appointmentId"]) : undefined,
     queueEntryId: search["queueEntryId"] ? Number(search["queueEntryId"]) : undefined,
   }),
@@ -230,7 +238,11 @@ function LabOrders() {
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Input placeholder="Add custom test…" className="h-9 w-56 rounded-xl text-xs" />
-        <Button size="sm" className="rounded-xl" onClick={() => toast.success(`${selected.length} tests ordered`)}>
+        <Button
+          size="sm"
+          className="rounded-xl"
+          onClick={() => toast.success(`${selected.length} tests ordered`)}
+        >
           Order {selected.length} tests
         </Button>
       </div>
@@ -278,7 +290,10 @@ function FollowUp() {
         </p>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {["Voice call", "SMS", "App notification"].map((c) => (
-            <Badge key={c} className="rounded-full border-0 bg-card text-[11px] text-accent-foreground">
+            <Badge
+              key={c}
+              className="rounded-full border-0 bg-card text-[11px] text-accent-foreground"
+            >
               {c}
             </Badge>
           ))}
@@ -297,26 +312,117 @@ function ConsultationPage() {
   const navigate = useNavigate();
   const { patientId } = Route.useLoaderData();
   const { appointmentId, queueEntryId } = Route.useSearch();
-  const patient = findPatient(patientId)!;
+  // Parse numeric patient ID if possible for backend REST API
+  const numericPatientId = parseInt(patientId.replace(/\D/g, "")) || 0;
+
+  // Query real patient details from backend if numeric ID
+  const { data: realPatientData } = useQuery({
+    queryKey: ["consultation-patient-profile", numericPatientId],
+    queryFn: () => patientApi.getPatientById(numericPatientId),
+    enabled: numericPatientId > 0 && isAuthenticated(),
+  });
+
+  // Query appointment details if appointmentId provided in search params
+  const { data: appointmentData, refetch: refetchAppointment } = useQuery({
+    queryKey: ["consultation-appointment", appointmentId],
+    queryFn: () => appointmentApi.getAppointmentById(appointmentId!),
+    enabled: Boolean(appointmentId && appointmentId > 0 && isAuthenticated()),
+    refetchInterval: (query) => {
+      const apt = query.state.data;
+      return apt?.appointmentType === "TELECONSULTATION" &&
+        apt.status !== "COMPLETED" &&
+        apt.status !== "CANCELLED"
+        ? 15000
+        : false;
+    },
+  });
+
+  // Fallback: if no appointmentId in search params, query recent appointments for this patient
+  const { data: patientAppointments } = useQuery({
+    queryKey: ["consultation-patient-appointments", numericPatientId],
+    queryFn: () => appointmentApi.getPatientAppointments(numericPatientId, 0, 5),
+    enabled: !appointmentId && numericPatientId > 0 && isAuthenticated(),
+  });
+
+  const activeAppointment: AppointmentResponse | undefined =
+    appointmentData ||
+    patientAppointments?.content?.find(
+      (a) =>
+        a.status === "IN_PROGRESS" ||
+        a.status === "CONFIRMED" ||
+        a.status === "CHECKED_IN" ||
+        a.status === "BOOKED",
+    );
+
+  const fallbackPatient = findPatient(patientId)!;
+  const patient = useMemo(() => {
+    if (!realPatientData) return fallbackPatient;
+    const p = realPatientData;
+    const birthDate = p.dateOfBirth ? new Date(p.dateOfBirth) : null;
+    const age =
+      birthDate && !isNaN(birthDate.getTime())
+        ? new Date().getFullYear() - birthDate.getFullYear()
+        : fallbackPatient.age;
+    const fullName = `${p.firstName} ${p.lastName}`.trim();
+    const bg = p.bloodGroup
+      ? p.bloodGroup
+          .replace("_POSITIVE", "+")
+          .replace("_NEGATIVE", "-")
+          .replace("POSITIVE", "+")
+          .replace("NEGATIVE", "-")
+      : fallbackPatient.bloodGroup;
+    const gender = p.gender
+      ? ((p.gender.charAt(0).toUpperCase() + p.gender.slice(1).toLowerCase()) as "Male" | "Female")
+      : fallbackPatient.gender;
+
+    return {
+      ...fallbackPatient,
+      id: String(p.id),
+      name: fullName || fallbackPatient.name,
+      upid: p.patientCode || fallbackPatient.upid,
+      mobile: p.mobileNumber || fallbackPatient.mobile,
+      age: age > 0 ? age : fallbackPatient.age,
+      gender,
+      bloodGroup: bg,
+      photo: `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(
+        p.firstName || "Patient",
+      )}&backgroundColor=dbeafe,e0f2fe,ede9fe`,
+    };
+  }, [realPatientData, fallbackPatient]);
+
   const [aiOpen, setAiOpen] = useState(true);
 
   // Form states
-  const [primaryDiagnosis, setPrimaryDiagnosis] = useState("Type 2 Diabetes Mellitus — uncontrolled");
+  const [primaryDiagnosis, setPrimaryDiagnosis] = useState(
+    "Type 2 Diabetes Mellitus — uncontrolled",
+  );
   const [secondaryDiagnosis, setSecondaryDiagnosis] = useState("Stage 1 Hypertension");
   const [symptoms, setSymptoms] = useState("Polyuria, fatigue, mild headache");
   const [clinicalNotes, setClinicalNotes] = useState(
     "Patient reports increased fatigue over the last 3 weeks. Systemic exam normal, BP slightly elevated.",
   );
-  const [treatmentAdvice, setTreatmentAdvice] = useState("Low sodium diet, Metformin 500mg BD, Amlodipine 5mg QD");
+  const [treatmentAdvice, setTreatmentAdvice] = useState(
+    "Low sodium diet, Metformin 500mg BD, Amlodipine 5mg QD",
+  );
 
   const [activeConsultation, setActiveConsultation] = useState<ConsultationResponse | null>(null);
   const [saving, setSaving] = useState(false);
   const [completing, setCompleting] = useState(false);
 
-  // Parse numeric patient ID if possible for backend REST API
-  const numericPatientId = parseInt(patientId.replace(/\D/g, "")) || 1;
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      navigate({ to: "/login" });
+      return;
+    }
+    if (!isDoctor()) {
+      toast.error("Unauthorized: Consultation workspace is doctor-only");
+      navigate({ to: "/receptionist" });
+      return;
+    }
+  }, [navigate]);
 
   useEffect(() => {
+    if (!isDoctor()) return;
     let isMounted = true;
     async function loadBackendConsultation() {
       try {
@@ -372,8 +478,8 @@ function ConsultationPage() {
         setActiveConsultation(created);
         toast.success("Consultation draft created successfully");
       }
-    } catch (err: any) {
-      toast.error(err.message || "Failed to save consultation draft");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to save consultation draft");
     } finally {
       setSaving(false);
     }
@@ -413,8 +519,8 @@ function ConsultationPage() {
       setTimeout(() => {
         navigate({ to: "/queue" });
       }, 1000);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to complete consultation");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to complete consultation");
     } finally {
       setCompleting(false);
     }
@@ -441,13 +547,20 @@ function ConsultationPage() {
             </Link>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="truncate text-lg font-extrabold sm:text-xl">Consultation Workspace</h1>
+                <h1 className="truncate text-lg font-extrabold sm:text-xl">
+                  Consultation Workspace
+                </h1>
                 {activeConsultation && (
                   <Badge
                     variant={activeConsultation.status === "COMPLETED" ? "default" : "outline"}
                     className="rounded-full text-[10px]"
                   >
                     {activeConsultation.status}
+                  </Badge>
+                )}
+                {activeAppointment?.appointmentType === "TELECONSULTATION" && (
+                  <Badge className="bg-indigo-100 text-indigo-900 border-indigo-200 rounded-full text-[10px] font-bold">
+                    <Video className="size-3 mr-1" /> Teleconsultation
                   </Badge>
                 )}
               </div>
@@ -477,6 +590,13 @@ function ConsultationPage() {
           </div>
 
           <div className="min-w-0 space-y-5">
+            {activeAppointment && activeAppointment.appointmentType === "TELECONSULTATION" && (
+              <VideoConsultationCard
+                appointment={activeAppointment}
+                onAppointmentUpdated={() => refetchAppointment()}
+              />
+            )}
+
             <Tabs defaultValue="consult">
               <TabsList className="w-full justify-start overflow-x-auto rounded-xl">
                 <TabsTrigger value="consult" className="rounded-lg text-xs">
@@ -512,7 +632,10 @@ function ConsultationPage() {
                 />
               </TabsContent>
               <TabsContent value="rx" className="mt-4 space-y-5">
-                <PrescriptionBuilder consultationId={activeConsultation?.id} allergies={patient.allergies} />
+                <PrescriptionBuilder
+                  consultationId={activeConsultation?.id}
+                  allergies={patient.allergies}
+                />
                 <PatientPrescriptionHistory patientId={numericPatientId} />
               </TabsContent>
               <TabsContent value="billing" className="mt-4 space-y-5">
@@ -560,31 +683,65 @@ function ConsultationPage() {
             className="shrink-0 rounded-xl"
             onClick={handleCompleteConsultation}
           >
-            {completing ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+            {completing ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <CheckCircle2 className="size-3.5" />
+            )}
             Complete Consultation
           </Button>
 
-          <Button size="sm" variant="outline" className="shrink-0 rounded-xl" onClick={() => toast.success("Prescription Printed")}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 rounded-xl"
+            onClick={() => toast.success("Prescription Printed")}
+          >
             <Printer className="size-3.5" /> Print Prescription
           </Button>
 
-          <Button size="sm" variant="outline" className="shrink-0 rounded-xl" onClick={() => toast.success("Prescription Sent to Patient")}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 rounded-xl"
+            onClick={() => toast.success("Prescription Sent to Patient")}
+          >
             <Send className="size-3.5" /> Send Prescription
           </Button>
 
-          <Button size="sm" variant="outline" className="shrink-0 rounded-xl" onClick={() => toast.success("Lab Order Submitted")}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 rounded-xl"
+            onClick={() => toast.success("Lab Order Submitted")}
+          >
             <FlaskConical className="size-3.5" /> Order Lab
           </Button>
 
-          <Button size="sm" variant="outline" className="shrink-0 rounded-xl" onClick={() => toast.success("Specialist Referral Initiated")}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 rounded-xl"
+            onClick={() => toast.success("Specialist Referral Initiated")}
+          >
             <UserPlus className="size-3.5" /> Refer Specialist
           </Button>
 
-          <Button size="sm" variant="outline" className="shrink-0 rounded-xl" onClick={() => toast.success("Admission Order Created")}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 rounded-xl"
+            onClick={() => toast.success("Admission Order Created")}
+          >
             <BedDouble className="size-3.5" /> Hospital Admission
           </Button>
 
-          <Button size="sm" variant="outline" className="shrink-0 rounded-xl" onClick={() => toast.success("Medical Certificate Generated")}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 rounded-xl"
+            onClick={() => toast.success("Medical Certificate Generated")}
+          >
             <FileBadge className="size-3.5" /> Medical Certificate
           </Button>
         </div>

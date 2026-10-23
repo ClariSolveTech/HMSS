@@ -114,10 +114,22 @@ public class AppointmentIntegrationTest {
     private com.healthcare.backend.prescription.repository.PrescriptionRepository prescriptionRepository;
 
     @Autowired
+    private com.healthcare.backend.lab.repository.LabResultRepository labResultRepository;
+
+    @Autowired
     private com.healthcare.backend.lab.repository.LabOrderRepository labOrderRepository;
 
     @Autowired
     private com.healthcare.backend.billing.repository.InvoiceRepository invoiceRepository;
+
+    @Autowired
+    private com.healthcare.backend.billing.repository.InvoiceItemRepository invoiceItemRepository;
+
+    @Autowired
+    private com.healthcare.backend.billing.repository.PaymentRepository paymentRepository;
+
+    @Autowired
+    private com.healthcare.backend.notification.repository.NotificationRepository notificationRepository;
 
     @Autowired
     private com.healthcare.backend.consultation.repository.ConsultationRepository consultationRepository;
@@ -163,8 +175,12 @@ public class AppointmentIntegrationTest {
                 .apply(SecurityMockMvcConfigurers.springSecurity())
                 .build();
 
+        notificationRepository.deleteAll();
         prescriptionRepository.deleteAll();
+        labResultRepository.deleteAll();
         labOrderRepository.deleteAll();
+        paymentRepository.deleteAll();
+        invoiceItemRepository.deleteAll();
         invoiceRepository.deleteAll();
         consultationRepository.deleteAll();
         queueEntryRepository.deleteAll();
@@ -1005,5 +1021,103 @@ public class AppointmentIntegrationTest {
                         .param("status", "BOOKED"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isArray());
+    }
+
+    @Test
+    @DisplayName("49. Create teleconsultation appointment with meeting metadata and verify retrieval")
+    void test49_createTeleconsultationAppointment_withMeetingMetadata() throws Exception {
+        LocalDate teleDate = testFutureDate.plusDays(7);
+        CreateAppointmentRequest req = new CreateAppointmentRequest();
+        req.setPatientId(patientAId);
+        req.setDoctorId(doctorAId);
+        req.setAppointmentDate(teleDate);
+        req.setStartTime(LocalTime.of(10, 0));
+        req.setAppointmentType(AppointmentType.TELECONSULTATION);
+        req.setBookingSource(BookingSource.RECEPTION);
+        req.setReason("Remote Teleconsultation follow-up");
+
+        MvcResult result = mockMvc.perform(post("/api/v1/appointments")
+                        .header("Authorization", "Bearer " + tokenDoctorA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.appointmentType").value("TELECONSULTATION"))
+                .andExpect(jsonPath("$.meetUrl", startsWith("https://meet.mock.internal/teleconsult/simulated-")))
+                .andExpect(jsonPath("$.teleconsultationSpaceId", startsWith("spaces/mock-simulated-")))
+                .andExpect(jsonPath("$.isTeleconsultation").value(true))
+                .andReturn();
+
+        Long aptId = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(get("/api/v1/appointments/" + aptId)
+                        .header("Authorization", "Bearer " + tokenDoctorA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(aptId))
+                .andExpect(jsonPath("$.appointmentType").value("TELECONSULTATION"))
+                .andExpect(jsonPath("$.meetUrl", startsWith("https://meet.mock.internal/teleconsult/simulated-")))
+                .andExpect(jsonPath("$.teleconsultationSpaceId", startsWith("spaces/mock-simulated-")))
+                .andExpect(jsonPath("$.isTeleconsultation").value(true));
+    }
+
+    @Test
+    @DisplayName("50. Create standard appointment without meeting metadata defaults to null and false")
+    void test50_createStandardAppointment_withoutMeetingMetadata_defaultsToNullAndFalse() throws Exception {
+        LocalDate teleDate = testFutureDate.plusDays(7);
+        CreateAppointmentRequest req = new CreateAppointmentRequest();
+        req.setPatientId(patientAId);
+        req.setDoctorId(doctorAId);
+        req.setAppointmentDate(teleDate);
+        req.setStartTime(LocalTime.of(10, 15));
+        req.setAppointmentType(AppointmentType.NEW_CONSULTATION);
+        req.setBookingSource(BookingSource.RECEPTION);
+        req.setReason("Routine in-person consultation");
+
+        MvcResult result = mockMvc.perform(post("/api/v1/appointments")
+                        .header("Authorization", "Bearer " + tokenDoctorA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.appointmentType").value("NEW_CONSULTATION"))
+                .andExpect(jsonPath("$.meetUrl").doesNotExist())
+                .andExpect(jsonPath("$.teleconsultationSpaceId").doesNotExist())
+                .andExpect(jsonPath("$.isTeleconsultation").value(false))
+                .andReturn();
+
+        Long aptId = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(get("/api/v1/appointments/" + aptId)
+                        .header("Authorization", "Bearer " + tokenDoctorA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(aptId))
+                .andExpect(jsonPath("$.appointmentType").value("NEW_CONSULTATION"))
+                .andExpect(jsonPath("$.isTeleconsultation").value(false));
+    }
+
+    @Test
+    @DisplayName("51. Filter appointments by TELECONSULTATION type")
+    void test51_filterAppointmentsByTeleconsultationType() throws Exception {
+        LocalDate teleDate = testFutureDate.plusDays(7);
+        CreateAppointmentRequest req = new CreateAppointmentRequest();
+        req.setPatientId(patientAId);
+        req.setDoctorId(doctorAId);
+        req.setAppointmentDate(teleDate);
+        req.setStartTime(LocalTime.of(10, 30));
+        req.setAppointmentType(AppointmentType.TELECONSULTATION);
+        req.setBookingSource(BookingSource.RECEPTION);
+
+        mockMvc.perform(post("/api/v1/appointments")
+                        .header("Authorization", "Bearer " + tokenDoctorA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.appointmentType").value("TELECONSULTATION"))
+                .andExpect(jsonPath("$.meetUrl", startsWith("https://meet.mock.internal/teleconsult/simulated-")));
+
+        mockMvc.perform(get("/api/v1/appointments")
+                        .header("Authorization", "Bearer " + tokenDoctorA)
+                        .param("appointmentType", "TELECONSULTATION"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(greaterThanOrEqualTo(1))))
+                .andExpect(jsonPath("$.content[0].appointmentType").value("TELECONSULTATION"));
     }
 }

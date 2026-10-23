@@ -30,6 +30,9 @@ public class AppointmentResponse {
     private LocalDateTime cancelledAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private String meetUrl;
+    private String teleconsultationSpaceId;
+    private Boolean isTeleconsultation;
 
     public AppointmentResponse() {
     }
@@ -192,5 +195,29 @@ public class AppointmentResponse {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getMeetUrl() {
+        return meetUrl;
+    }
+
+    public void setMeetUrl(String meetUrl) {
+        this.meetUrl = meetUrl;
+    }
+
+    public String getTeleconsultationSpaceId() {
+        return teleconsultationSpaceId;
+    }
+
+    public void setTeleconsultationSpaceId(String teleconsultationSpaceId) {
+        this.teleconsultationSpaceId = teleconsultationSpaceId;
+    }
+
+    public Boolean getIsTeleconsultation() {
+        return isTeleconsultation;
+    }
+
+    public void setIsTeleconsultation(Boolean isTeleconsultation) {
+        this.isTeleconsultation = isTeleconsultation;
     }
 }

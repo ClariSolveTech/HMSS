@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
+import { isDoctor } from "@/lib/auth";
 
 /* ─── Types ───────────────────────────────────────────────────────────────── */
 
@@ -58,6 +59,7 @@ export function useDoctorAnalyticsSummary() {
   return useQuery({
     queryKey: ["doctor-analytics-summary"],
     queryFn: () => analyticsApi.getSummary(),
+    enabled: isDoctor(),
     staleTime: 60_000, // 1 minute
     retry: 1,
   });
@@ -67,6 +69,7 @@ export function useDoctorAnalyticsTrends(from?: string, to?: string) {
   return useQuery({
     queryKey: ["doctor-analytics-trends", from, to],
     queryFn: () => analyticsApi.getTrends(from, to),
+    enabled: isDoctor(),
     staleTime: 60_000, // 1 minute
     retry: 1,
   });

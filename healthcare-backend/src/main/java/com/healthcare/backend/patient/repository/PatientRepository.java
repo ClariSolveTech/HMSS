@@ -19,5 +19,22 @@ public interface PatientRepository extends JpaRepository<Patient, Long> {
 
     Optional<Patient> findByPatientCodeAndHospitalId(String patientCode, Long hospitalId);
 
+    Optional<Patient> findByUserId(Long userId);
+
+    Optional<Patient> findByUserIdAndHospitalId(Long userId, Long hospitalId);
+
+    boolean existsByUserId(Long userId);
+
     long countByHospitalId(Long hospitalId);
+
+    @org.springframework.data.jpa.repository.Query("SELECT p FROM Patient p WHERE p.hospital.id = :hospitalId AND (" +
+            "LOWER(p.firstName) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(p.lastName) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "p.mobileNumber LIKE CONCAT('%', :search, '%') OR " +
+            "LOWER(p.patientCode) LIKE LOWER(CONCAT('%', :search, '%')))")
+    Page<Patient> searchPatients(
+            @org.springframework.data.repository.query.Param("hospitalId") Long hospitalId,
+            @org.springframework.data.repository.query.Param("search") String search,
+            Pageable pageable
+    );
 }
